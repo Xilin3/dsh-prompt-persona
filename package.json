@@ -1,7 +1,7 @@
 {
   "name": "@xilin3/dsh-prompt-persona",
-  "version": "0.3.0",
-  "description": "DSH 插件：在设置页可视化编辑系统提示词（deployment:persona-prefix），支持实时预览与保存。已适配 DSH 0.1.7-rc.2。",
+  "version": "0.4.0",
+  "description": "DSH 插件：在设置页可视化编辑系统提示词（deployment:persona-prefix），支持实时预览与保存。已适配 DSH 0.2.0-rc.2（兼容 0.1.7-rc.2 起的契约）。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -23,16 +23,17 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-general",
         "@deepseek-ai/dsh-client-ui-slots"
       ],
       "platform": "web"
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-settings": ">=0.1.7-rc.2 <0.2",
-    "@deepseek-ai/dsh-system-prompt": ">=0.1.7-rc.2 <0.2",
-    "@deepseek-ai/dsh-host-webserver": ">=0.1.7-rc.2 <0.2",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.7-rc.2 <0.2",
+    "@deepseek-ai/dsh-settings": ">=0.1.7-rc.2 <0.3",
+    "@deepseek-ai/dsh-system-prompt": ">=0.1.7-rc.2 <0.3",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.7-rc.2 <0.3",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.7-rc.2 <0.3",
     "@deepseek-ai/cordis": "~4.0.4",
     "@deepseek-ai/cosmokit": "^1.8.5",
     "@deepseek-ai/schemastery": "^3.18.4",

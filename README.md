@@ -7,14 +7,34 @@
 
 > 在 Harness 的系统提示词组装模型里，部署 persona 是唯一一段「由配置/部署作者撰写」的片段（order `0`）。本插件接管这段片段，把它变成设置页里可直接编辑、可预览、可持久化的内容，而无需改动 Harness 本体或手写 `cordis.patch.yml`。
 
-**当前版本：0.3.0 — 已适配 DSH `0.1.7-rc.2`。** 兼容性改动见下方「版本适配」。
+**当前版本：0.4.0 — 已适配 DSH `0.2.0-rc.2`。** 兼容性改动见下方「版本适配」。
 
 ---
 
-## 版本适配（0.1.7-rc.2）
+## 版本适配（0.2.0-rc.2）
+
+DSH 0.2.0 把设置页的**槽位声明**从 `dsh-client-ui-settings` 搬到了新的
+`dsh-client-ui-settings-general`（设置外壳：侧栏、导航、`settings.section` 的 children 表）。
+插件依赖的宿主 API 其余部分（`system-prompt` 注册表、`settings` 服务、`webServer`、
+`agentDefaultModel`、`whileServed`）在 0.2.0 上**契约不变**，所以这一版主要是声明与
+依赖准备的问题，而不是逻辑改写：
+
+| 断裂点 | 0.1.7-rc.2 | 现在（0.2.0-rc.2） | 本插件的处理 |
+| --- | --- | --- | --- |
+| `settings.section` 槽位声明方 | `@deepseek-ai/dsh-client-ui-settings` | **`@deepseek-ai/dsh-client-ui-settings-general`**（ui-settings 只剩 `configForms` 与共享镜像） | `dsh.client.inject` 补上 general；`slots.inject` 本身会等声明出现（declaration epoch），补声明方是为了让它先到 |
+| 宿主依赖解析 | 宿主包能从 npm 全局 `dsh/node_modules` 里被顺带解析到 | 桌面版从 **app.asar** 装载，解出来是平铺目录，**没有兄弟包** | `link-deps.mjs` 改为从根包出发求**依赖闭包**（`dsh-system-prompt` → `cordis` / `dsh-scope` → `@standard-schema/spec` …），漏一个就 `ERR_MODULE_NOT_FOUND` |
+| 桌面版安装目录探测 | 只读注册表 `InstallLocation` | 桌面版写的是 `DisplayIcon` / `UninstallString`，`InstallLocation` 不一定有 | 三个值都读；另加 `$DSH_DESKTOP_HOME`；asar 根前缀按 `@deepseek-ai/*` 校验 |
+| peer 范围 | `>=0.1.7-rc.2 <0.2` | 0.2.x 会被这个上界**排除** | 上界放宽到 `<0.3` |
+| 依赖来源优先级 | npm 全局 dsh 优先 | 桌面版**实际在跑的那份**是 app.asar | `$DSH_CHECKOUT`（显式开发意图）→ app.asar → npm 全局 / profile |
+
+自检覆盖了这些点：`npm run check` 会打印本次跑在哪个宿主版本上（例如
+`dsh-system-prompt@0.2.0-rc.2  schemastery@3.18.4  cosmokit@1.8.5  cordis@4.0.4`），
+并断言 peer 上界不排除 0.2.x。
+
+### 历史适配（0.1.7-rc.2）
 
 DSH 0.1.7 重做了设置（settings）的持久化模型：**插件不再自报 settings namespace**，而是由自己的
-Config schema 出表单，namespace 就是 profile 里这条 loader entry 的 **id**。本版本据此改写：
+Config schema 出表单，namespace 就是 profile 里这条 loader entry 的 **id**。该版本据此改写：
 
 | 断裂点 | 0.1.5-rc.x | 现在（0.1.7-rc.2） | 本插件的处理 |
 | --- | --- | --- | --- |
@@ -146,21 +166,27 @@ cd <插件目录>
 node scripts/link-deps.mjs        # 自动探测来源，逐个校验能力
 ```
 
-脚本会在 `<插件>/node_modules/@deepseek-ai/` 下建 junction（Windows 下等价于 `mklink /J`），并打印每个包的实际版本。**它会校验 `schemastery` 是否带 `.volatile()`**：0.1.7 的 settings 只投影 volatile 字段，链到旧版（3.18.2）会导致设置页整个不出现。
+脚本会在 `<插件>/node_modules/` 下按 specifier 原样准备依赖（Windows 下建 junction，等价于 `mklink /J`；asar 来源解包落盘），并打印每个包的实际版本。
 
-**DSH Desktop 用户**：桌面版把宿主包放在安装目录的 `resources/app.asar` 里，脚本能自动从常见安装位置找到它；装在自定义目录（例如 `D:\Deepseekharness`）时显式指一下：
+**它求的是依赖闭包，不只是三个根包**：`dsh-system-prompt` 自己还会 `import` `@deepseek-ai/cordis`、`@deepseek-ai/dsh-scope`，cordis 又依赖 `@deepseek-ai/cosmokit` 与 `@standard-schema/spec`……DSH 0.1.7 时代这些包能从 npm 全局 `dsh` 目录里被顺带解析到，而桌面版从 app.asar 解出来的是**平铺**目录、没有兄弟包，漏一个就会在 import 期直接失败。
+
+**它还会校验 `schemastery` 是否带 `.volatile()`**（能力探针 + 真实 `import`）：settings 只投影 volatile 字段，链到旧版（< 3.18.4）会导致设置页整个不出现。
+
+**DSH Desktop 用户**：桌面版把宿主包放在安装目录的 `resources/app.asar` 里。脚本会自己找：显式 `--asar` → `$DSH_DESKTOP_ASAR` / `$DSH_DESKTOP_HOME` → 注册表（`InstallLocation` / `DisplayIcon` / `UninstallString`，桌面版写的是后两个）→ `%LOCALAPPDATA%\Programs` 等常见安装根。装在自定义目录又探测不到时显式指一下：
 
 ```bash
 node scripts/link-deps.mjs --asar "D:\Deepseekharness\resources\app.asar"
 ```
 
-其它来源（按优先级自动尝试）：`$DSH_CHECKOUT` → 桌面版安装目录 → npm 全局安装的 `dsh` → `~/.dsh/profiles/node_modules`。都不满足时脚本会失败并打印可选做法（例如 `npm i -g @deepseek-ai/dsh@0.1.7-rc.2`），而不是静默链上不兼容的版本。
+来源优先级：`$DSH_CHECKOUT`（显式开发意图）→ **app.asar（宿主实际在跑的那份代码）** → npm 全局安装的 `dsh` → `~/.dsh/profiles/node_modules`。都不满足时脚本会失败并打印可选做法（例如 `npm i -g @deepseek-ai/dsh@<你正在用的版本>`），而不是静默链上不兼容的版本。
 
 漏掉这一步的典型报错：
 
 ```text
 Cannot find package '@deepseek-ai/dsh-system-prompt'
-# 或者（链到旧 schemastery）
+# 或者（闭包没求全）
+Cannot find package '@deepseek-ai/cordis' imported from .../dsh-system-prompt/lib/index.js
+# 或者（链到旧版 schemastery）
 TypeError: z.string(...).volatile is not a function
 ```
 
@@ -170,7 +196,7 @@ TypeError: z.string(...).volatile is not a function
 npm run check     # node --check 四个 lib 文件 + scripts/check-adaptation.mjs
 ```
 
-`check-adaptation.mjs` 会用**真实的 DSH 0.1.7 包**跑一遍 host 半身（17 项）：Config 的 volatile 契约、注入语义、遮蔽守卫、`settings.describe()/update()` 往返、乐观锁冲突与只读降级、client 半身的 slot/configForms 约定。
+`check-adaptation.mjs` 会用**真实的 DSH 宿主包**（从 `link-deps` 准备好的那份，运行时打印版本）跑一遍 host 半身（17 项）：Config 的 volatile 契约、注入语义、遮蔽守卫、`settings.describe()/update()` 往返、乐观锁冲突与只读降级、client 半身的 slot/configForms 约定、peer 范围覆盖 0.2.x。
 
 还可以把插件挂进**真实的提示词注册表**跑集成自检（需要能读到 DSH 宿主包目录）：
 

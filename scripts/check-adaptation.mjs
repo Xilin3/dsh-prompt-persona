@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * 适配自检：拿真实的 DSH 0.1.7 包（schemastery / cosmokit / dsh-system-prompt）
- * 跑一遍插件 host 半身，确认它用的是 0.1.7 的契约。
+ * 适配自检：拿真实的 DSH 宿主包（schemastery / cosmokit / dsh-system-prompt）
+ * 跑一遍插件 host 半身，确认它用的是当前 DSH 的契约。
+ *
+ * 目标版本：DSH **0.2.0-rc.2**（0.1.7-rc.2 起的契约基本延续，断裂点见 README）。
  *
  * 前置：先跑 `node scripts/link-deps.mjs`（本脚本 import 的 @deepseek-ai/* 就是它
  * 准备的那几份）。用法：`node scripts/check-adaptation.mjs`
@@ -30,11 +32,26 @@ async function test(name, body) {
   }
 }
 
-console.log('prompt-persona · DSH 0.1.7 适配自检\n')
+/** 报告本次自检实际跑在哪个宿主版本上 —— 适配结论必须能对上是哪一份包。 */
+function linkedHostVersions() {
+  const scope = join(PKG_ROOT, 'node_modules', '@deepseek-ai')
+  const rows = []
+  for (const name of ['dsh-system-prompt', 'schemastery', 'cosmokit', 'cordis', 'dsh-scope']) {
+    try {
+      rows.push(`${name}@${JSON.parse(fs.readFileSync(join(scope, name, 'package.json'), 'utf8')).version}`)
+    } catch {
+      rows.push(`${name}@(未链接)`)
+    }
+  }
+  return rows.join('  ')
+}
+
+console.log('prompt-persona · DSH 0.2.0 适配自检')
+console.log(`  宿主包：${linkedHostVersions()}\n`)
 
 /* ---------------------------------------------------- Config 与 volatile 契约 */
 
-await test('Config 的字段是可写的 volatile（0.1.7 表单只投影 volatile 字段）', () => {
+await test('Config 的字段是可写的 volatile（settings 表单只投影 volatile 字段）', () => {
   const parsed = Config({})
   assert.equal(typeof parsed.persona?.get, 'function', 'persona 应该是 volatile 引用')
   assert.equal(typeof parsed.mode?.get, 'function', 'mode 应该是 volatile 引用')
@@ -279,19 +296,30 @@ await test('preview()：只影响草稿，不改动存档值', async () => {
 
 /* ------------------------------------------------------------ client 半身契约 */
 
-await test('client 半身使用 0.1.7 的 slots / configForms 约定', () => {
+await test('client 半身使用当前的 slots / configForms 约定', () => {
   const source = fs.readFileSync(join(PKG_ROOT, 'lib', 'client.js'), 'utf8')
   assert.match(source, /const inject = \["slots", "configForms"\]/, '应注入 slots 与 configForms')
   assert.match(source, /configForms\.whileServed\(\[SETTINGS_NAMESPACE\]/, '应通过 whileServed 跟随本条目')
   assert.match(source, /name: "settings\.section"/, '应注册到 settings.section')
   assert.match(source, /writable === false/, '应处理只读部署')
+  // 0.2.0 起 settings.section 由 ui-settings-general 声明（不再在 ui-settings 里）。
+  // slots.inject 会等声明出现，但 inject 列表里指名 owner 才能保证先到。
+  const pkg = JSON.parse(fs.readFileSync(join(PKG_ROOT, 'package.json'), 'utf8'))
+  assert.ok(
+    pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-settings-general'),
+    'client.inject 应包含 settings.section 的声明方 dsh-client-ui-settings-general',
+  )
 })
 
-await test('package.json 声明 0.1.7 的依赖范围与可选 settings', () => {
+await test('package.json 的依赖范围覆盖 0.2.x（上界不早于 0.3）', () => {
   const pkg = JSON.parse(fs.readFileSync(join(PKG_ROOT, 'package.json'), 'utf8'))
   assert.equal(pkg.peerDependencies['@deepseek-ai/schemastery'], '^3.18.4')
   assert.ok(pkg.peerDependencies['@deepseek-ai/cosmokit'], '需要 cosmokit（isVolatile）')
-  assert.match(pkg.peerDependencies['@deepseek-ai/dsh-system-prompt'], /0\.1\.7/)
+  for (const name of ['@deepseek-ai/dsh-settings', '@deepseek-ai/dsh-system-prompt', '@deepseek-ai/dsh-host-webserver', '@deepseek-ai/dsh-client-ui-settings']) {
+    const range = pkg.peerDependencies[name]
+    assert.ok(range, `${name} 应有 peer 范围`)
+    assert.doesNotMatch(range, /<\s*0\.2(\D|$)/, `${name} 的上界不能把 0.2.x 排除在外（当前 ${range}）`)
+  }
   assert.ok(pkg.peerDependenciesMeta['@deepseek-ai/dsh-settings']?.optional, 'settings 应是可选依赖')
   assert.ok(pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-settings'))
 })

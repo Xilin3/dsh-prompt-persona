@@ -4,6 +4,7 @@
 #   1. loader entry id（本条目在 profile 里的地址）
 #   2. DSH 0.1.7 起的 **settings 命名空间** —— 设置表单与 `settings.update()`
 #      都以 entry id 定位插件，两者不一致会让设置页读不到/写不进本条目。
+#      （0.2.0-rc.2 沿用同一约定。）
 #
 # 运行时默认值走插件自己的 Config 边界（见 lib/config.js，两个字段都是 volatile）；
 # 用户也可以在自己的 profile cordis.patch.yml 里用同一 id 覆盖 config，
